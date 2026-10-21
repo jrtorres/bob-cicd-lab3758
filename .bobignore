@@ -4,5 +4,6 @@
 **/target/*
 !**/target/surefire-reports/
 !**/target/surefire-reports/**
+!**/target/checkstyle*.xml
 
 **/Jenkinsfile*solution

@@ -175,9 +175,93 @@ spec:
         //    See labs/lab3/SECURITY_ANALYSIS.md.
 
         // ── Lab 4: Linting ───────────────────────────────────────
-        //    Add a lint stage + Bob lint analysis + parse and post
-        //    Jenkins report as a PR comment.
-        //    See labs/lab4/LINTING.md.
+        stage('Run Linters') {
+            options {
+                timeout(time: 10, unit: 'MINUTES')
+            }
+            steps {
+                sh 'mkdir -p lint-results'
+
+                // Checkstyle (Maven → build-tools, the default container)
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                    sh 'mvn -f order-service/pom.xml checkstyle:check'
+                }
+                sh 'cp order-service/target/checkstyle-result.xml lint-results/checkstyle.xml || true'
+
+                container('lint-tools') {
+                    catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                        sh 'hadolint --no-color order-service/Dockerfile > lint-results/hadolint.txt 2>&1'
+                    }
+                    catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                        sh 'checkov -d order-service/deploy-flawed/ --compact --quiet --no-color > lint-results/checkov.txt 2>&1'
+                    }
+                    catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                        sh 'kube-linter lint order-service/deploy-flawed/ > lint-results/kubelinter.txt 2>&1'
+                    }
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'lint-results/*', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Bob Lint Analysis') {
+            when {
+                expression {
+                    return ['checkstyle.xml', 'hadolint.txt', 'checkov.txt', 'kubelinter.txt']
+                        .any { fileExists("lint-results/${it}") }
+                }
+            }
+            options {
+                timeout(time: 10, unit: 'MINUTES')
+            }
+            steps {
+                script {
+                    catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                        def lintPrompt = """
+Read the following files directly (skip any that do not exist):
+- lint-results/checkstyle.xml
+- lint-results/hadolint.txt
+- lint-results/checkov.txt
+- lint-results/kubelinter.txt
+- order-service/src/
+- order-service/Dockerfile
+- order-service/deploy-flawed/
+
+Then:
+1. Group all findings by severity.
+2. De-duplicate overlapping findings reported by more than one tool.
+3. Identify the highest-priority remediations.
+4. Recommend concrete fixes for each.
+"""
+                        def report = askBob(lintPrompt, 'pipeline-lint-analyzer')
+                        writeFile file: 'bob-lint-report.md', text: report
+
+                        def commentPrompt = """
+Read bob-lint-report.md and produce a concise pull request comment summarizing
+the lint results: overall status, the top priority issues, and the key fixes.
+"""
+                        def prComment = askBob(commentPrompt, 'pipeline-lint-analyzer')
+                        writeFile file: 'bob-lint-pr-comment.md', text: prComment
+
+                        echo '════════════════════════════════════════════════════════'
+                        echo '  Bob — Lint Analysis'
+                        echo '════════════════════════════════════════════════════════'
+                        echo prComment
+                        echo '  Full report: bob-lint-report.md (archived)'
+                        echo '  PR comment:  bob-lint-pr-comment.md (archived)'
+                        echo '════════════════════════════════════════════════════════'
+                    }
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'bob-lint-report.md,bob-lint-pr-comment.md', allowEmptyArchive: true
+                }
+            }
+        }
 
     }
 
