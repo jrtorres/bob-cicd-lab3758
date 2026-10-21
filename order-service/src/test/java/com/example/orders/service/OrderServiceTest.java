@@ -45,7 +45,7 @@ class OrderServiceTest {
     void getAllOrders_returnsAllOrders() {
         when(orderRepository.findAll()).thenReturn(Arrays.asList(testOrder));
         List<Order> orders = orderService.getAllOrders();
-        assertThat(orders).hasSize(1);
+        assertThat(orders).hasSize(2);
         assertThat(orders.get(0).getCustomerName()).isEqualTo("John Doe");
     }
 
@@ -62,6 +62,15 @@ class OrderServiceTest {
         when(orderRepository.findById(99L)).thenReturn(Optional.empty());
         Optional<Order> result = orderService.getOrderById(99L);
         assertThat(result).isEmpty();
+    }
+
+    @Test
+    void getOrderById_nullId_propagatesRepositoryException() {
+        when(orderRepository.findById(null)).thenThrow(new IllegalArgumentException("The given id must not be null"));
+
+        assertThatThrownBy(() -> orderService.getOrderById(null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must not be null");
     }
 
     @Test

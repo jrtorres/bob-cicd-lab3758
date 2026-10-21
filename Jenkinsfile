@@ -129,8 +129,46 @@ spec:
         }
 
         // ── Lab 2: Unit Testing ──────────────────────────────────
-        //    Add a mvn test stage + Bob test-failure analysis.
-        //    See labs/lab2/UNIT_TESTING.md.
+        stage('Unit Tests') {
+            options {
+                timeout(time: 5, unit: 'MINUTES')
+            }
+            steps {
+                script {
+                    def testResult = 0
+                    dir('order-service') {
+                        testResult = sh(
+                            script: 'mvn test',
+                            returnStatus: true
+                        )
+                    }
+
+                    junit testResults: 'order-service/target/surefire-reports/*.xml', allowEmptyResults: true
+
+                    if (testResult != 0) {
+                        currentBuild.result = 'UNSTABLE'
+                        catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                            def prompt = "Analyze the test failure reports under order-service/target/surefire-reports/ alongside the relevant source files under order-service/src/ and diagnose the failures."
+
+                            def analysis = askBob(prompt, 'pipeline-test-failure-analyzer')
+
+                            echo '════════════════════════════════════════════════════════'
+                            echo '  Bob — Unit Test Failure Analysis'
+                            echo '════════════════════════════════════════════════════════'
+                            echo analysis
+                            echo '════════════════════════════════════════════════════════'
+
+                            writeFile file: 'bob-test-analysis.md', text: analysis
+                        }
+                    }
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'bob-test-analysis.md', allowEmptyArchive: true
+                }
+            }
+        }
 
         // ── Lab 3: Security Scanning ─────────────────────────────
         //    Add a scanner stage + Bob CVE/vuln analysis.
